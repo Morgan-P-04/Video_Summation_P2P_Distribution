@@ -5,11 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.fyp.core.util.VideoSplicer
@@ -21,11 +24,15 @@ fun MainScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // State to hold our list of recorded snippets
+    // State management
     var videoFiles by remember { mutableStateOf(listOf<File>()) }
     var isProcessing by remember { mutableStateOf(false) }
 
-    // Helper function to refresh the file list
+    // Dialog state for Delete and Rename
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    var fileToRename by remember { mutableStateOf<File?>(null) }
+    var renameTextFieldValue by remember { mutableStateOf("") }
+
     fun refreshFiles() {
         val directory = context.filesDir
         videoFiles = directory.listFiles { file ->
@@ -33,15 +40,14 @@ fun MainScreen() {
         }?.toList()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 
-    // Load files when the screen opens
     LaunchedEffect(Unit) {
         refreshFiles()
     }
 
     Scaffold(
         floatingActionButton = {
-            // Only show button if we have at least 2 snippets to join
-            val snippets = videoFiles.filter { it.name.startsWith("snippet_") }
+            // Stitch anything that is NOT already a "final" video
+            val snippets = videoFiles.filter { !it.name.startsWith("final_") }
             if (snippets.size >= 2 && !isProcessing) {
                 ExtendedFloatingActionButton(
                     onClick = {
@@ -67,7 +73,6 @@ fun MainScreen() {
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             if (isProcessing) {
-                // Show loading overlay while stitching
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -78,7 +83,6 @@ fun MainScreen() {
                     Text("Merging Videos... please wait")
                 }
             } else {
-                // Main List UI
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     Text(
                         text = "Your Snippets",
@@ -93,25 +97,93 @@ fun MainScreen() {
                             items(videoFiles) { file ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = if (file.name.endsWith(".mp4"))
+                                    colors = if (file.name.startsWith("final_"))
                                         CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                                     else CardDefaults.cardColors()
                                 ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text(
-                                            text = if (file.name.startsWith("final_")) "Final Video" else file.name,
-                                            style = MaterialTheme.typography.bodyLarge
-                                        )
-                                        Text(
-                                            text = "${file.length() / 1024} KB",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = if (file.name.startsWith("final_")) "Final Video" else file.name,
+                                                style = MaterialTheme.typography.bodyLarge
+                                            )
+                                            Text(
+                                                text = "${file.length() / 1024} KB",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+
+                                        // Rename Button
+                                        IconButton(onClick = {
+                                            fileToRename = file
+                                            renameTextFieldValue = file.nameWithoutExtension
+                                        }) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Rename")
+                                        }
+
+                                        // Delete Button
+                                        IconButton(onClick = { fileToDelete = file }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            // --- Delete Confirmation Dialog ---
+            fileToDelete?.let { file ->
+                AlertDialog(
+                    onDismissRequest = { fileToDelete = null },
+                    title = { Text("Confirm Deletion") },
+                    text = { Text("Are you sure you want to delete ${file.name}?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            if (file.delete()) {
+                                refreshFiles()
+                                Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                            }
+                            fileToDelete = null
+                        }) { Text("Delete", color = Color.Red) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { fileToDelete = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // --- Rename Dialog ---
+            fileToRename?.let { file ->
+                AlertDialog(
+                    onDismissRequest = { fileToRename = null },
+                    title = { Text("Rename File") },
+                    text = {
+                        OutlinedTextField(
+                            value = renameTextFieldValue,
+                            onValueChange = { renameTextFieldValue = it },
+                            label = { Text("New file name") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val newFile = File(context.filesDir, "$renameTextFieldValue.mp4")
+                            if (file.renameTo(newFile)) {
+                                refreshFiles()
+                                Toast.makeText(context, "Renamed", Toast.LENGTH_SHORT).show()
+                            }
+                            fileToRename = null
+                        }) { Text("Save") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
+                    }
+                )
             }
         }
     }
