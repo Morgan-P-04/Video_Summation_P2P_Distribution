@@ -1,5 +1,5 @@
 [versions]
-agp = "9.0.0"
+agp = "8.13.0"
 coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
@@ -12,6 +12,9 @@ navigationCompose = "2.9.7"
 navigationComposeVersion = "2.9.7"
 camerax="1.5.3"
 accompanist = "0.34.0"
+coreKtxVersion = "1.17.0"
+room = "2.8.4"
+ksp = "2.0.21-1.0.27"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -41,6 +44,10 @@ androidx-camera-extensions = { group = "androidx.camera", name = "camera-extensi
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanist" }
 # Extended Icons
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtxVersion" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 
 [bundles]
@@ -56,4 +63,6 @@ camerax = [
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 
