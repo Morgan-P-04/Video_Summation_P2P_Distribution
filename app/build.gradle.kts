@@ -56,4 +56,8 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // CameraX
+    implementation(libs.bundles.camerax)
+    implementation(libs.accompanist.permissions)
+    implementation(libs.androidx.compose.material.icons.extended)
 }
