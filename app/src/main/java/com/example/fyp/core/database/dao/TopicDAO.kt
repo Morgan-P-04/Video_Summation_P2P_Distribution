@@ -2,17 +2,13 @@ package com.example.fyp.core.database.dao
 
 import androidx.room.*
 import com.example.fyp.core.database.entities.TopicEntity
-import com.example.fyp.core.database.entities.UserEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface TopicDAO {
+interface TopicDao {
     @Query("SELECT * FROM topics")
-    fun getTopics(): Flow<List<TopicEntity>>
+    fun getAllTopics(): Flow<List<TopicEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdateUser(topic: TopicEntity)
-    
-
-
+    suspend fun insertTopic(topic: TopicEntity)
 }
