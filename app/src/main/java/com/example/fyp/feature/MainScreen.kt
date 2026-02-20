@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.media.MediaMetadataRetriever
+import com.example.fyp.core.database.entities.PublishedVideoEntity
 import com.example.fyp.core.util.VideoSplicer
 import kotlinx.coroutines.launch
 import java.io.File
@@ -42,6 +43,7 @@ fun MainScreen() {
 
     // Dialog state
     var fileToDelete by remember { mutableStateOf<File?>(null) }
+    var dbVideoToDelete by remember { mutableStateOf<PublishedVideoEntity?>(null) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameTextFieldValue by remember { mutableStateOf("") }
 
@@ -175,13 +177,23 @@ fun MainScreen() {
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                                 ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text(
-                                            text = "Video ID: ${dbVideo.videoId.take(8)}...",
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
-                                        Text(text = "Path: ${dbVideo.localPath.takeLast(25)}", style = MaterialTheme.typography.bodySmall)
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Video ID: ${dbVideo.videoId.take(8)}...",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
+                                            Text(text = "Path: ${dbVideo.localPath.takeLast(25)}", style = MaterialTheme.typography.bodySmall)
+                                        }
+
+                                        // ADD THIS TRASH CAN BUTTON
+                                        IconButton(onClick = { dbVideoToDelete = dbVideo }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete Video", tint = Color.Red)
+                                        }
                                     }
                                 }
                             }
@@ -204,6 +216,23 @@ fun MainScreen() {
                     },
                     dismissButton = {
                         TextButton(onClick = { fileToDelete = null }) { Text("Cancel") }
+                    }
+                )
+            }
+            // Delete Confirmation Dialog for DB Videos
+            dbVideoToDelete?.let { video ->
+                AlertDialog(
+                    onDismissRequest = { dbVideoToDelete = null },
+                    title = { Text("Delete Daily Highlight?") },
+                    text = { Text("Are you sure you want to permanently delete this spliced video?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.deleteVideo(video)
+                            dbVideoToDelete = null
+                        }) { Text("Delete", color = Color.Red) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { dbVideoToDelete = null }) { Text("Cancel") }
                     }
                 )
             }

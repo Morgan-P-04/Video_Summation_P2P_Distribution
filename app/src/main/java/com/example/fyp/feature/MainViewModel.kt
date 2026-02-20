@@ -43,6 +43,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.savePublishedVideo(newVideo)
         }
     }
+    // Function to delete stitched video
+    fun deleteVideo(video: PublishedVideoEntity) {
+        viewModelScope.launch {
+            // remove from internal storage
+            val file = java.io.File(video.localPath)
+            if (file.exists()) {
+                file.delete()
+            }
+            // remove from DB
+            repository.deletePublishedVideo(video)
+        }
+    }
 }
 
 // Factory to create the ViewModel with the Application context

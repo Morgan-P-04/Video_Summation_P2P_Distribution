@@ -18,4 +18,8 @@ class VideoRepository(
     suspend fun savePublishedVideo(video: PublishedVideoEntity) {
         publishedVideoDao.insertVideo(video)
     }
+
+    suspend fun deletePublishedVideo(video: PublishedVideoEntity) {
+        publishedVideoDao.deleteVideo(video)
+    }
 }
