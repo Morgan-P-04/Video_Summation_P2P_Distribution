@@ -1,5 +1,6 @@
 package com.example.fyp.feature
 
+import android.app.Application
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import android.media.MediaMetadataRetriever
 import com.example.fyp.core.util.VideoSplicer
 import kotlinx.coroutines.launch
 import java.io.File
@@ -24,42 +27,75 @@ fun MainScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // State management
-    var videoFiles by remember { mutableStateOf(listOf<File>()) }
+    // ViewModel method
+    val application = context.applicationContext as Application
+    val viewModel: MainViewModel = viewModel(
+        factory = MainViewModelFactory(application)
+    )
+
+    // get DB state
+    val publishedVideos by viewModel.myVideos.collectAsState()
+
+    // get local file (snippets) state
+    var snippetFiles by remember { mutableStateOf(listOf<File>()) }
     var isProcessing by remember { mutableStateOf(false) }
 
-    // Dialog state for Delete and Rename
+    // Dialog state
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameTextFieldValue by remember { mutableStateOf("") }
 
-    fun refreshFiles() {
+    // Helper function --> get only unstitched snippets from DB
+    fun refreshSnippets() {
         val directory = context.filesDir
-        videoFiles = directory.listFiles { file ->
-            file.extension == "mp4"
+        snippetFiles = directory.listFiles { file ->
+            file.extension == "mp4" && !file.name.startsWith("final_")
         }?.toList()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 
     LaunchedEffect(Unit) {
-        refreshFiles()
+        refreshSnippets()
     }
 
     Scaffold(
         floatingActionButton = {
-            // Stitch anything that is NOT already a "final" video
-            val snippets = videoFiles.filter { !it.name.startsWith("final_") }
-            if (snippets.size >= 2 && !isProcessing) {
+            if (snippetFiles.size >= 2 && !isProcessing) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         isProcessing = true
                         scope.launch {
                             val out = File(context.filesDir, "final_stitched_${System.currentTimeMillis()}.mp4")
-                            val success = VideoSplicer.appendVideos(snippets, out)
+                            // Pass ONLY the snippets to splicer
+                            val success = VideoSplicer.appendVideos(snippetFiles, out)
                             isProcessing = false
 
                             if (success) {
-                                Toast.makeText(context, "Video Stitched!", Toast.LENGTH_SHORT).show()
-                                refreshFiles()
+                                Toast.makeText(context, "Video Stitched & Saved to DB!", Toast.LENGTH_SHORT).show()
+
+                                // get cumulative duration of snippets
+                                var actualDurationSeconds = 0
+                                val retriever = MediaMetadataRetriever()
+                                try {
+                                    // Point the retriever at stitched video
+                                    retriever.setDataSource(out.absolutePath)
+                                    val timeString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                    val timeInMillis = timeString?.toLong() ?: 0L
+
+                                    // Convert milliseconds to seconds
+                                    actualDurationSeconds = (timeInMillis / 1000).toInt()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                } finally {
+                                    retriever.release() // free memory
+                                }
+
+                                // save to DB
+                                viewModel.saveVideoToDb(
+                                    localPath = out.absolutePath,
+                                    duration = actualDurationSeconds
+                                )
+
+                                refreshSnippets()
                             } else {
                                 Toast.makeText(context, "Stitching failed", Toast.LENGTH_SHORT).show()
                             }
@@ -84,47 +120,30 @@ fun MainScreen() {
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    Text(
-                        text = "Your Snippets",
-                        style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
 
-                    if (videoFiles.isEmpty()) {
-                        Text("No snippets recorded yet. Go to 'Capture' to start!")
+                    // local storage
+                    Text(
+                        text = "Video Snippets",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    if (snippetFiles.isEmpty()) {
+                        Text("No snippets recorded. Go to 'Capture' to start!", style = MaterialTheme.typography.bodyMedium)
                     } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(videoFiles) { file ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = if (file.name.startsWith("final_"))
-                                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                                    else CardDefaults.cardColors()
-                                ) {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f), // half the screen
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(snippetFiles) { file ->
+                                Card(modifier = Modifier.fillMaxWidth()) {
                                     Row(
                                         modifier = Modifier.padding(16.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = if (file.name.startsWith("final_")) "Final Video" else file.name,
-                                                style = MaterialTheme.typography.bodyLarge
-                                            )
-                                            Text(
-                                                text = "${file.length() / 1024} KB",
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
+                                            Text(text = file.name, style = MaterialTheme.typography.bodyLarge)
+                                            Text(text = "${file.length() / 1024} KB", style = MaterialTheme.typography.bodySmall)
                                         }
-
-                                        // Rename Button
-                                        IconButton(onClick = {
-                                            fileToRename = file
-                                            renameTextFieldValue = file.nameWithoutExtension
-                                        }) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Rename")
-                                        }
-
-                                        // Delete Button
                                         IconButton(onClick = { fileToDelete = file }) {
                                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                                         }
@@ -133,55 +152,58 @@ fun MainScreen() {
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Room DB
+                    Text(
+                        text = "My Published Videos",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    if (publishedVideos.isEmpty()) {
+                        Text("No final videos yet. Splice some snippets!", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f), // Takes up the other half
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(publishedVideos) { dbVideo ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(
+                                            text = "Video ID: ${dbVideo.videoId.take(8)}...",
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
+                                        Text(text = "Path: ${dbVideo.localPath.takeLast(25)}", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            // --- Delete Confirmation Dialog ---
+            // Delete Confirmation Dialog
             fileToDelete?.let { file ->
                 AlertDialog(
                     onDismissRequest = { fileToDelete = null },
-                    title = { Text("Confirm Deletion") },
+                    title = { Text("Delete Snippet?") },
                     text = { Text("Are you sure you want to delete ${file.name}?") },
                     confirmButton = {
                         TextButton(onClick = {
-                            if (file.delete()) {
-                                refreshFiles()
-                                Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
-                            }
+                            if (file.delete()) refreshSnippets()
                             fileToDelete = null
                         }) { Text("Delete", color = Color.Red) }
                     },
                     dismissButton = {
                         TextButton(onClick = { fileToDelete = null }) { Text("Cancel") }
-                    }
-                )
-            }
-
-            // --- Rename Dialog ---
-            fileToRename?.let { file ->
-                AlertDialog(
-                    onDismissRequest = { fileToRename = null },
-                    title = { Text("Rename File") },
-                    text = {
-                        OutlinedTextField(
-                            value = renameTextFieldValue,
-                            onValueChange = { renameTextFieldValue = it },
-                            label = { Text("New file name") },
-                            singleLine = true
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            val newFile = File(context.filesDir, "$renameTextFieldValue.mp4")
-                            if (file.renameTo(newFile)) {
-                                refreshFiles()
-                                Toast.makeText(context, "Renamed", Toast.LENGTH_SHORT).show()
-                            }
-                            fileToRename = null
-                        }) { Text("Save") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
                     }
                 )
             }
