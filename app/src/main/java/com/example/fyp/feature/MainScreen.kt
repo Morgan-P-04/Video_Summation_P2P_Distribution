@@ -146,6 +146,12 @@ fun MainScreen() {
                                             Text(text = file.name, style = MaterialTheme.typography.bodyLarge)
                                             Text(text = "${file.length() / 1024} KB", style = MaterialTheme.typography.bodySmall)
                                         }
+                                        IconButton(onClick = {
+                                            fileToRename = file
+                                            renameTextFieldValue = file.nameWithoutExtension
+                                        }) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Rename")
+                                        }
                                         IconButton(onClick = { fileToDelete = file }) {
                                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                                         }
@@ -233,6 +239,38 @@ fun MainScreen() {
                     },
                     dismissButton = {
                         TextButton(onClick = { dbVideoToDelete = null }) { Text("Cancel") }
+                    }
+                )
+            }
+            // Rename Dialog for Snippets
+            fileToRename?.let { file ->
+                AlertDialog(
+                    onDismissRequest = { fileToRename = null },
+                    title = { Text("Rename Snippet") },
+                    text = {
+                        OutlinedTextField(
+                            value = renameTextFieldValue,
+                            onValueChange = { renameTextFieldValue = it },
+                            label = { Text("New file name") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            // Create a new File object with the updated name
+                            val newFile = File(context.filesDir, "$renameTextFieldValue.mp4")
+
+                            if (file.renameTo(newFile)) {
+                                refreshSnippets() // Refresh the UI list
+                                Toast.makeText(context, "Renamed!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Rename failed", Toast.LENGTH_SHORT).show()
+                            }
+                            fileToRename = null // Close dialog
+                        }) { Text("Save") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
                     }
                 )
             }
