@@ -1,6 +1,7 @@
 package com.example.fyp.core.database.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -14,4 +15,7 @@ interface PublishedVideoDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVideo(video: PublishedVideoEntity)
+
+    @Delete
+    suspend fun deleteVideo(video: PublishedVideoEntity)
 }

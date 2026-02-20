@@ -16,6 +16,8 @@ interface SubscribedVideoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubscribedVideo(video: SubscribedVideoEntity)
 
+    @Query("SELECT * FROM subscribed_videos ORDER BY receivedAt DESC")
+    fun getMySubscribedVideos(): Flow<List<SubscribedVideoEntity>>
 
 
 }
