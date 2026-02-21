@@ -22,6 +22,10 @@ import com.example.fyp.core.database.entities.PublishedVideoEntity
 import com.example.fyp.core.util.VideoSplicer
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun MainScreen() {
@@ -46,6 +50,7 @@ fun MainScreen() {
     var dbVideoToDelete by remember { mutableStateOf<PublishedVideoEntity?>(null) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameTextFieldValue by remember { mutableStateOf("") }
+    var videoPathToPlay by remember { mutableStateOf<String?>(null) }
 
     // Helper function --> get only unstitched snippets from DB
     fun refreshSnippets() {
@@ -137,7 +142,7 @@ fun MainScreen() {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(snippetFiles) { file ->
-                                Card(modifier = Modifier.fillMaxWidth()) {
+                                Card(modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = file.absolutePath }) {
                                     Row(
                                         modifier = Modifier.padding(16.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -180,7 +185,7 @@ fun MainScreen() {
                         ) {
                             items(publishedVideos) { dbVideo ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = dbVideo.localPath },
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                                 ) {
                                     Row(
@@ -273,6 +278,40 @@ fun MainScreen() {
                         TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
                     }
                 )
+            }
+
+            // video playback overlay
+            videoPathToPlay?.let { path ->
+                Dialog(
+                    onDismissRequest = { videoPathToPlay = null },
+                    properties = DialogProperties(
+                        usePlatformDefaultWidth = false, // Allows full screen
+                        dismissOnClickOutside = true
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
+                        VideoPlayer(
+                            videoPath = path,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Close Button in the top right
+                        IconButton(
+                            onClick = { videoPathToPlay = null },
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Player",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
             }
         }
     }
