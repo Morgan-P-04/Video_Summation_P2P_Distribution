@@ -3,6 +3,7 @@ package com.example.fyp.core.util
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,8 @@ object VideoSplicer {
             muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
             val videoExtractor = MediaExtractor()
-            videoExtractor.setDataSource(videoFiles[0].absolutePath)
+            val firstVideoPath = videoFiles[0].absolutePath
+            videoExtractor.setDataSource(firstVideoPath)
 
             // Find Video and Audio Tracks
             var videoTrackIndex = -1
@@ -44,6 +46,20 @@ object VideoSplicer {
             // Add tracks to muxer
             val muxerVideoIndex = videoFormat?.let { muxer.addTrack(it) } ?: -1
             val muxerAudioIndex = audioFormat?.let { muxer.addTrack(it) } ?: -1
+
+            // handle orientation
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(firstVideoPath)
+                val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                val rotationDegrees = rotationStr?.toIntOrNull() ?: 0
+                muxer.setOrientationHint(rotationDegrees)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to extract rotation metadata: ${e.message}")
+            } finally {
+                retriever.release()
+            }
+            // ---------------------------------------------
 
             muxer.start()
 
