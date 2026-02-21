@@ -72,8 +72,8 @@ fun MainScreen() {
                         isProcessing = true
                         scope.launch {
                             val out = File(context.filesDir, "final_stitched_${System.currentTimeMillis()}.mp4")
-                            // Pass ONLY the snippets to splicer
-                            val success = VideoSplicer.appendVideos(snippetFiles, out)
+                            // Pass ONLY the snippets to splicer, reversed so the oldest is the fist clip when spliced
+                            val success = VideoSplicer.appendVideos(snippetFiles.reversed(), out)
                             isProcessing = false
 
                             if (success) {
