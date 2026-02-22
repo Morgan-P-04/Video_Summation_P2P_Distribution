@@ -29,29 +29,46 @@ class P2pNetworkManager(private val context: Context) {
 
     //  hold incoming files until they finish downloading
     private val incomingPayloads = mutableMapOf<Long, Payload>()
+    // temporarily holds Topic IDs until the matching file finishes downloading
+    private val pendingVideoMetadata = mutableMapOf<Long, Int>()
 
     // receive files and save to DB
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            if (payload.type == Payload.Type.FILE) {
-                // the file has started transferring - store in map to track progress.
-                incomingPayloads[payload.id] = payload
-                Log.d("P2P", "Incoming video started from $endpointId")
+            when (payload.type) {
+                Payload.Type.BYTES -> {
+                    val metadataStr = String(payload.asBytes()!!, Charsets.UTF_8)
+                    val parts = metadataStr.split(",")
+                    if (parts.size == 2) {
+                        val filePayloadId = parts[0].toLongOrNull()
+                        val topicId = parts[1].toIntOrNull()
+
+                        if (filePayloadId != null && topicId != null) {
+                            //store topicID
+                            pendingVideoMetadata[filePayloadId] = topicId
+                            Log.d("P2P", "Received metadata: File ID $filePayloadId belongs to Topic $topicId")
+                        }
+                    }
+                }
+                Payload.Type.FILE -> {
+                    incomingPayloads[payload.id] = payload
+                    Log.d("P2P", "Incoming video started from $endpointId")
+                }
             }
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
             when (update.status) {
                 PayloadTransferUpdate.Status.IN_PROGRESS -> {
-                    // calculate transfer percentage to watch in Logcat
                     if (update.totalBytes > 0) {
                         val progress = (update.bytesTransferred.toFloat() / update.totalBytes.toFloat() * 100).toInt()
-                        Log.d("P2P", "Transferring with $endpointId: $progress% (${update.bytesTransferred} / ${update.totalBytes} bytes)")
+                        Log.d("P2P", "Transferring with $endpointId: $progress%")
                     }
                 }
                 PayloadTransferUpdate.Status.SUCCESS -> {
-                    Log.d("P2P", "Transfer 100% COMPLETE to/from $endpointId")
                     val payload = incomingPayloads.remove(update.payloadId)
+                    // synced topicID (default to 1)
+                    val syncedTopicId = pendingVideoMetadata.remove(update.payloadId) ?: 1
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
@@ -60,7 +77,6 @@ class P2pNetworkManager(private val context: Context) {
                                 val uniqueId = System.currentTimeMillis().toString()
                                 val finalFile = File(context.filesDir, "received_$uniqueId.mp4")
 
-                                // ContentResolver to safely bypass Scoped Storage
                                 val uri = payloadFile.asUri()
                                 if (uri != null) {
                                     context.contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -69,26 +85,22 @@ class P2pNetworkManager(private val context: Context) {
                                         }
                                     }
                                 } else {
-                                    // Fallback for old Android versions
                                     payloadFile.asJavaFile()?.copyTo(finalFile, overwrite = true)
                                 }
-
-                                // Attempt to delete the hidden .nearby temp file to save space
                                 payloadFile.asJavaFile()?.delete()
 
-                                // Save to Room DB
                                 val receivedVideo = SubscribedVideoEntity(
                                     deliveryId = java.util.UUID.randomUUID().toString(),
                                     videoId = uniqueId,
                                     subscriberId = localUsername,
-                                    topicId = 1,    // TODO: fix metadata syncing
+                                    topicId = syncedTopicId,
                                     sourcePeerId = endpointId,
                                     receivedAt = System.currentTimeMillis(),
-                                    TTL = 24,
+                                    TTL = 24, // 24 hour purge
                                     deliveryState = "DELIVERED"
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                                Log.d("P2P", "Video safely saved to DB and storage using URI stream!")
+                                Log.d("P2P", "Video saved! Synced Topic ID: $syncedTopicId")
                             } catch (e: Exception) {
                                 Log.e("P2P", "Failed to copy and save video: ${e.message}")
                             }
@@ -96,12 +108,12 @@ class P2pNetworkManager(private val context: Context) {
                     }
                 }
                 PayloadTransferUpdate.Status.FAILURE -> {
-                    Log.e("P2P", "Payload transfer FAILED with $endpointId")
                     incomingPayloads.remove(update.payloadId)
+                    pendingVideoMetadata.remove(update.payloadId)
                 }
                 PayloadTransferUpdate.Status.CANCELED -> {
-                    Log.w("P2P", "Payload transfer CANCELED with $endpointId")
                     incomingPayloads.remove(update.payloadId)
+                    pendingVideoMetadata.remove(update.payloadId)
                 }
             }
         }
@@ -126,10 +138,19 @@ class P2pNetworkManager(private val context: Context) {
                     myVideos.forEach { video ->
                         val file = File(video.localPath)
                         if (file.exists()) {
-                            // Turn the file into a Payload and send it across the room
+                            // prepare file payload
                             val filePayload = Payload.fromFile(file)
+                            val payloadId = filePayload.id // The unique ID for this specific transfer
+
+                            // prepare the metadata payload (Format: "payloadId,topicId")
+                            val metadataString = "$payloadId,${video.topicId}"
+                            val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
+
+                            // send metadata, then file
+                            connectionsClient.sendPayload(endpointId, metadataPayload)
                             connectionsClient.sendPayload(endpointId, filePayload)
-                            Log.d("P2P", "Sending ${file.name} to $endpointId")
+
+                            Log.d("P2P", "Sent metadata and file for ${file.name} to $endpointId")
                         }
                     }
                 }
