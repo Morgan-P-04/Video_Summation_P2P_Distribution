@@ -41,34 +41,50 @@ class P2pNetworkManager(private val context: Context) {
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
-            if (update.status == PayloadTransferUpdate.Status.SUCCESS) {
-                // The transfer complete
-                val payload = incomingPayloads.remove(update.payloadId)
+            when (update.status) {
+                PayloadTransferUpdate.Status.IN_PROGRESS -> {
+                    // calculate transfer percentage to watch in Logcat
+                    if (update.totalBytes > 0) {
+                        val progress = (update.bytesTransferred.toFloat() / update.totalBytes.toFloat() * 100).toInt()
+                        Log.d("P2P", "Transferring with $endpointId: $progress% (${update.bytesTransferred} / ${update.totalBytes} bytes)")
+                    }
+                }
+                PayloadTransferUpdate.Status.SUCCESS -> {
+                    Log.d("P2P", "Transfer 100% COMPLETE to/from $endpointId")
+                    val payload = incomingPayloads.remove(update.payloadId)
 
-                if (payload != null && payload.type == Payload.Type.FILE) {
-                    val tempFile = payload.asFile()?.asJavaFile()
+                    if (payload != null && payload.type == Payload.Type.FILE) {
+                        val tempFile = payload.asFile()?.asJavaFile()
 
-                    if (tempFile != null) {
-                        // move it from temporary cache to app's storage
-                        val finalFile = File(context.filesDir, "received_${System.currentTimeMillis()}.mp4")
-                        tempFile.renameTo(finalFile)
+                        if (tempFile != null) {
+                            val finalFile = File(context.filesDir, "received_${System.currentTimeMillis()}.mp4")
+                            tempFile.renameTo(finalFile)
 
-                        // save it to Room DB
-                        scope.launch {
-                            val receivedVideo = SubscribedVideoEntity(
-                                deliveryId = UUID.randomUUID().toString(),
-                                videoId = "video_${System.currentTimeMillis()}", // TODO replace placeholder ID
-                                subscriberId = localUsername,
-                                topicId = 1, // TODO: fix metadata syncing
-                                sourcePeerId = endpointId,
-                                receivedAt = System.currentTimeMillis(),
-                                TTL = 24, // 24-hour purge
-                                deliveryState = "DELIVERED"
-                            )
-                            db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                            Log.d("P2P", "Video saved to DB and storage")
+                            // save to Room DB
+                            scope.launch {
+                                val receivedVideo = SubscribedVideoEntity(
+                                    deliveryId = UUID.randomUUID().toString(),
+                                    videoId = "video_${System.currentTimeMillis()}", // TODO replace placeholder ID
+                                    subscriberId = localUsername,
+                                    topicId = 1,    // TODO: fix metadata syncing
+                                    sourcePeerId = endpointId,
+                                    receivedAt = System.currentTimeMillis(),
+                                    TTL = 24, // 24 hour purge
+                                    deliveryState = "DELIVERED"
+                                )
+                                db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
+                                Log.d("P2P", "Video saved to DB and storage!")
+                            }
                         }
                     }
+                }
+                PayloadTransferUpdate.Status.FAILURE -> {
+                    Log.e("P2P", "Payload transfer FAILED with $endpointId")
+                    incomingPayloads.remove(update.payloadId)
+                }
+                PayloadTransferUpdate.Status.CANCELED -> {
+                    Log.w("P2P", "Payload transfer CANCELED with $endpointId")
+                    incomingPayloads.remove(update.payloadId)
                 }
             }
         }
