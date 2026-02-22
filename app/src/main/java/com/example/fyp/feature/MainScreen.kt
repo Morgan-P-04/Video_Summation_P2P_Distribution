@@ -40,6 +40,7 @@ fun MainScreen() {
 
     // get DB state
     val publishedVideos by viewModel.myVideos.collectAsState()
+    val subscribedVideos by viewModel.subscribedVideos.collectAsState()
 
     // get local file (snippets) state
     var snippetFiles by remember { mutableStateOf(listOf<File>()) }
@@ -201,9 +202,50 @@ fun MainScreen() {
                                             Text(text = "Path: ${dbVideo.localPath.takeLast(25)}", style = MaterialTheme.typography.bodySmall)
                                         }
 
-                                        // ADD THIS TRASH CAN BUTTON
+                                        // trash can icon for DB videos
                                         IconButton(onClick = { dbVideoToDelete = dbVideo }) {
                                             Icon(Icons.Default.Delete, contentDescription = "Delete Video", tint = Color.Red)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // received/subscribed videos
+                    Text(
+                        text = "Received Videos (Pub-Sub)",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    if (subscribedVideos.isEmpty()) {
+                        Text("No received videos yet. Go to 'Share' to find peers!", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(subscribedVideos) { subVideo ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { videoPathToPlay = context.filesDir.absolutePath + "/received_" + subVideo.videoId + ".mp4" }, // rough path
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Text(text = "Topic ID: ${subVideo.topicId}", style = MaterialTheme.typography.bodyMedium)
+                                            Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
                                         }
                                     }
                                 }

@@ -73,4 +73,6 @@ dependencies {
     // Media3
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    // Google Nearby Connections API
+    implementation(libs.play.services.nearby)
 }
