@@ -53,32 +53,44 @@ class P2pNetworkManager(private val context: Context) {
                     Log.d("P2P", "Transfer 100% COMPLETE to/from $endpointId")
                     val payload = incomingPayloads.remove(update.payloadId)
 
-                    if (payload != null && payload.type == Payload.Type.FILE) {
-                        val tempFile = payload.asFile()?.asJavaFile()
+                    val payloadFile = payload?.asFile()
+                    if (payloadFile != null) {
+                        scope.launch {
+                            try {
+                                val uniqueId = System.currentTimeMillis().toString()
+                                val finalFile = File(context.filesDir, "received_$uniqueId.mp4")
 
-                        if (tempFile != null) {
-                            // single ID for both the file and the DB
-                            val uniqueId = System.currentTimeMillis().toString()
-                            val finalFile = File(context.filesDir, "received_$uniqueId.mp4")
+                                // ContentResolver to safely bypass Scoped Storage
+                                val uri = payloadFile.asUri()
+                                if (uri != null) {
+                                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                        finalFile.outputStream().use { outputStream ->
+                                            inputStream.copyTo(outputStream)
+                                        }
+                                    }
+                                } else {
+                                    // Fallback for old Android versions
+                                    payloadFile.asJavaFile()?.copyTo(finalFile, overwrite = true)
+                                }
 
-                            // Safely copy the file
-                            tempFile.copyTo(finalFile, overwrite = true)
-                            tempFile.delete() // Clean up Nearby Connections temp file
+                                // Attempt to delete the hidden .nearby temp file to save space
+                                payloadFile.asJavaFile()?.delete()
 
-                            // Save to Room DB
-                            scope.launch {
+                                // Save to Room DB
                                 val receivedVideo = SubscribedVideoEntity(
-                                    deliveryId = UUID.randomUUID().toString(),
+                                    deliveryId = java.util.UUID.randomUUID().toString(),
                                     videoId = uniqueId,
                                     subscriberId = localUsername,
                                     topicId = 1,    // TODO: fix metadata syncing
                                     sourcePeerId = endpointId,
                                     receivedAt = System.currentTimeMillis(),
-                                    TTL = 24, // 24 hour purge
+                                    TTL = 24,
                                     deliveryState = "DELIVERED"
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                                Log.d("P2P", "Video saved to DB and storage!")
+                                Log.d("P2P", "Video safely saved to DB and storage using URI stream!")
+                            } catch (e: Exception) {
+                                Log.e("P2P", "Failed to copy and save video: ${e.message}")
                             }
                         }
                     }
