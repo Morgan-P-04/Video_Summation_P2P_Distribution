@@ -57,14 +57,19 @@ class P2pNetworkManager(private val context: Context) {
                         val tempFile = payload.asFile()?.asJavaFile()
 
                         if (tempFile != null) {
-                            val finalFile = File(context.filesDir, "received_${System.currentTimeMillis()}.mp4")
-                            tempFile.renameTo(finalFile)
+                            // single ID for both the file and the DB
+                            val uniqueId = System.currentTimeMillis().toString()
+                            val finalFile = File(context.filesDir, "received_$uniqueId.mp4")
 
-                            // save to Room DB
+                            // Safely copy the file
+                            tempFile.copyTo(finalFile, overwrite = true)
+                            tempFile.delete() // Clean up Nearby Connections temp file
+
+                            // Save to Room DB
                             scope.launch {
                                 val receivedVideo = SubscribedVideoEntity(
                                     deliveryId = UUID.randomUUID().toString(),
-                                    videoId = "video_${System.currentTimeMillis()}", // TODO replace placeholder ID
+                                    videoId = uniqueId,
                                     subscriberId = localUsername,
                                     topicId = 1,    // TODO: fix metadata syncing
                                     sourcePeerId = endpointId,
