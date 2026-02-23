@@ -1,6 +1,5 @@
 package com.example.fyp.feature
 
-import android.R.attr.bottom
 import android.app.Application
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -163,144 +162,137 @@ fun MainScreen() {
                     Text("Merging Videos... please wait")
                 }
             } else {
-                Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-
-                    // local storage
-                    Text(
-                        text = "Video Snippets",
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                // single LazyColumn for the entire screen
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp), // Bottom padding clears splice button
+                    verticalArrangement = Arrangement.spacedBy(12.dp) // even spacing
+                ) {
+                    // snippets
+                    item {
+                        // local storage
+                        Text(
+                            text = "Video Snippets",
+                            style = MaterialTheme.typography.headlineSmall,
+                            modifier = Modifier.padding(bottom = 4.dp, top = 8.dp)
+                        )
+                    }
                     if (snippetFiles.isEmpty()) {
-                        Text("No snippets recorded. Go to 'Capture' to start!", style = MaterialTheme.typography.bodyMedium)
+                        item { Text("No snippets recorded. Go to 'Capture' to start!", style = MaterialTheme.typography.bodyMedium) }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f), // half the screen
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(snippetFiles) { file ->
-                                Card(modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = file.absolutePath }) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(text = file.name, style = MaterialTheme.typography.bodyLarge)
-                                            Text(text = "${file.length() / 1024} KB", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                        IconButton(onClick = {
-                                            fileToRename = file
-                                            renameTextFieldValue = file.nameWithoutExtension
-                                        }) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Rename")
-                                        }
-                                        IconButton(onClick = { fileToDelete = file }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Room DB
-                    Text(
-                        text = "My Published Videos",
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    if (publishedVideos.isEmpty()) {
-                        Text("No final videos yet. Splice some snippets!", style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(publishedVideos) { dbVideo ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = dbVideo.localPath },
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        items(snippetFiles) { file ->
+                            Card(modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = file.absolutePath }) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = "Topic: ${predefinedTopics[dbVideo.topicId]}",
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
-                                        }
-
-                                        // trash can icon for DB videos
-                                        IconButton(onClick = { dbVideoToDelete = dbVideo }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Video", tint = Color.Red)
-                                        }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = file.name, style = MaterialTheme.typography.bodyLarge)
+                                        Text(text = "${file.length() / 1024} KB", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    IconButton(onClick = {
+                                        fileToRename = file
+                                        renameTextFieldValue = file.nameWithoutExtension
+                                    }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Rename")
+                                    }
+                                    IconButton(onClick = { fileToDelete = file }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                                     }
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // received/subscribed videos
-                    Text(
-                        text = "Received Videos (Pub-Sub)",
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    item { Divider(modifier = Modifier.padding(vertical = 8.dp)) }
 
-                    // subscription filter
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(predefinedTopics.toList()) { (id, name) ->
-                            FilterChip(
-                                selected = activeSubscriptions.contains(id),
-                                onClick = { viewModel.toggleSubscription(id) },
-                                label = { Text(name) }
-                            )
+                    // published videos
+                    item {
+                        Text(
+                            text = "My Published Videos",
+                            style = MaterialTheme.typography.headlineSmall,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                    if (publishedVideos.isEmpty()) {
+                        item { Text("No final videos yet. Splice some snippets!", style = MaterialTheme.typography.bodyMedium) }
+                    } else {
+                        items(publishedVideos) { dbVideo ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().clickable { videoPathToPlay = dbVideo.localPath },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Topic: ${predefinedTopics[dbVideo.topicId]}",
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    // trash can icon for DB videos
+                                    IconButton(onClick = { dbVideoToDelete = dbVideo }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Video", tint = Color.Red)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // divider
+                    item { Divider(modifier = Modifier.padding(vertical = 8.dp)) }
+
+                    // received videos
+                    item {
+                        Text(
+                            text = "Received Videos (Pub-Sub)",
+                            style = MaterialTheme.typography.headlineSmall,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+
+                    item {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(predefinedTopics.toList()) { (id, name) ->
+                                FilterChip(
+                                    selected = activeSubscriptions.contains(id),
+                                    onClick = { viewModel.toggleSubscription(id) },
+                                    label = { Text(name) }
+                                )
+                            }
                         }
                     }
 
                     if (subscribedVideos.isEmpty()) {
-                        Text("No received videos yet or no matching subscriptions. Go to 'Share' to find peers!", style = MaterialTheme.typography.bodyMedium)
+                        item { Text("No received videos yet or no matching subscriptions.", style = MaterialTheme.typography.bodyMedium) }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(bottom = 88.dp) // push above splice button
-                        ) {
-                            items(subscribedVideos) { subVideo ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { videoPathToPlay = context.filesDir.absolutePath + "/received_" + subVideo.videoId + ".mp4" }, // rough path
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                        items(subscribedVideos) { subVideo ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { videoPathToPlay = context.filesDir.absolutePath + "/received_" + subVideo.videoId + ".mp4" },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = "Topic: ${predefinedTopics[subVideo.topicId]}",
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            Text(text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}", style = MaterialTheme.typography.bodyMedium)
-                                            Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                        IconButton(onClick = { receivedVideoToDelete = subVideo }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Received Video", tint = Color.Red)
-                                        }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Topic: ${predefinedTopics[subVideo.topicId]}",
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Text(text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}", style = MaterialTheme.typography.bodyMedium)
+                                        Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    IconButton(onClick = { receivedVideoToDelete = subVideo }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Received Video", tint = Color.Red)
                                     }
                                 }
                             }
