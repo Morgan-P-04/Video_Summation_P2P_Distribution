@@ -4,6 +4,7 @@ import android.app.Application
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -55,6 +56,13 @@ fun MainScreen() {
     var videoPathToPlay by remember { mutableStateOf<String?>(null) }
     var receivedVideoToDelete by remember { mutableStateOf<SubscribedVideoEntity?>(null) }
 
+    // Track selected topic for splicing
+    var selectedPublishTopic by remember { mutableStateOf(1) } // Default to General
+    var showTopicDropdown by remember { mutableStateOf(false) }
+
+    // Get active subscriptions from ViewModel
+    val activeSubscriptions by viewModel.activeSubscriptions.collectAsState()
+
     // Helper function --> get only unstitched snippets from DB
     fun refreshSnippets() {
         val directory = context.filesDir
@@ -70,50 +78,75 @@ fun MainScreen() {
     Scaffold(
         floatingActionButton = {
             if (snippetFiles.size >= 2 && !isProcessing) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        isProcessing = true
-                        scope.launch {
-                            val out = File(context.filesDir, "final_stitched_${System.currentTimeMillis()}.mp4")
-                            // Pass ONLY the snippets to splicer, reversed so the oldest is the fist clip when spliced
-                            val success = VideoSplicer.appendVideos(snippetFiles.reversed(), out)
-                            isProcessing = false
-
-                            if (success) {
-                                Toast.makeText(context, "Video Stitched & Saved to DB!", Toast.LENGTH_SHORT).show()
-
-                                // get cumulative duration of snippets
-                                var actualDurationSeconds = 0
-                                val retriever = MediaMetadataRetriever()
-                                try {
-                                    // Point the retriever at stitched video
-                                    retriever.setDataSource(out.absolutePath)
-                                    val timeString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                    val timeInMillis = timeString?.toLong() ?: 0L
-
-                                    // Convert milliseconds to seconds
-                                    actualDurationSeconds = (timeInMillis / 1000).toInt()
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                } finally {
-                                    retriever.release() // free memory
-                                }
-
-                                // save to DB
-                                viewModel.saveVideoToDb(
-                                    localPath = out.absolutePath,
-                                    duration = actualDurationSeconds
+                // topic dropdown above action button
+                Column(horizontalAlignment = Alignment.End) {
+                    Box {
+                        OutlinedButton(
+                            onClick = { showTopicDropdown = true },
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Text("Topic: ${predefinedTopics[selectedPublishTopic]}")
+                        }
+                        DropdownMenu(
+                            expanded = showTopicDropdown,
+                            onDismissRequest = { showTopicDropdown = false }
+                        ) {
+                            predefinedTopics.forEach { (id, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        selectedPublishTopic = id
+                                        showTopicDropdown = false
+                                    }
                                 )
-
-                                refreshSnippets()
-                            } else {
-                                Toast.makeText(context, "Stitching failed", Toast.LENGTH_SHORT).show()
                             }
                         }
-                    },
-                    icon = { Icon(Icons.Default.Movie, contentDescription = null) },
-                    text = { Text("Stitch Snippets") }
-                )
+                    }
+
+                    ExtendedFloatingActionButton(
+                        onClick = {
+                            isProcessing = true
+                            scope.launch {
+                                val out = File(context.filesDir, "final_stitched_${System.currentTimeMillis()}.mp4")
+                                // Pass ONLY the snippets to splicer, reversed so the oldest is the fist clip when spliced
+                                val success = VideoSplicer.appendVideos(snippetFiles.reversed(), out)
+                                isProcessing = false
+
+                                if (success) {
+                                    Toast.makeText(context, "Video Stitched & Saved to DB!", Toast.LENGTH_SHORT).show()
+
+                                    // get cumulative duration of snippets
+                                    var actualDurationSeconds = 0
+                                    val retriever = MediaMetadataRetriever()
+                                    try {
+                                        retriever.setDataSource(out.absolutePath)
+                                        val timeString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                        val timeInMillis = timeString?.toLong() ?: 0L
+                                        actualDurationSeconds = (timeInMillis / 1000).toInt()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    } finally {
+                                        retriever.release()
+                                    }
+
+                                    // pass selected topic to the DB
+                                    viewModel.saveVideoToDb(
+                                        localPath = out.absolutePath,
+                                        duration = actualDurationSeconds,
+                                        topicId = selectedPublishTopic
+                                    )
+
+                                    refreshSnippets()
+                                } else {
+                                    Toast.makeText(context, "Stitching failed", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Movie, contentDescription = null) },
+                        text = { Text("Stitch Snippets") }
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -183,7 +216,7 @@ fun MainScreen() {
                         Text("No final videos yet. Splice some snippets!", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         LazyColumn(
-                            modifier = Modifier.weight(1f), // Takes up the other half
+                            modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(publishedVideos) { dbVideo ->
@@ -197,11 +230,10 @@ fun MainScreen() {
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "Video ID: ${dbVideo.videoId.take(8)}...",
+                                                text = "Topic: ${predefinedTopics[dbVideo.topicId]}",
                                                 style = MaterialTheme.typography.titleMedium
                                             )
                                             Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
-                                            Text(text = "Path: ${dbVideo.localPath.takeLast(25)}", style = MaterialTheme.typography.bodySmall)
                                         }
 
                                         // trash can icon for DB videos
@@ -223,8 +255,23 @@ fun MainScreen() {
                         style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
+
+                    // subscription filter
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(predefinedTopics.toList()) { (id, name) ->
+                            FilterChip(
+                                selected = activeSubscriptions.contains(id),
+                                onClick = { viewModel.toggleSubscription(id) },
+                                label = { Text(name) }
+                            )
+                        }
+                    }
+
                     if (subscribedVideos.isEmpty()) {
-                        Text("No received videos yet. Go to 'Share' to find peers!", style = MaterialTheme.typography.bodyMedium)
+                        Text("No received videos yet or no matching subscriptions. Go to 'Share' to find peers!", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         LazyColumn(
                             modifier = Modifier.weight(1f),
@@ -243,10 +290,10 @@ fun MainScreen() {
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}",
+                                                text = "Topic: ${predefinedTopics[subVideo.topicId]}",
                                                 style = MaterialTheme.typography.titleMedium
                                             )
-                                            Text(text = "Topic ID: ${subVideo.topicId}", style = MaterialTheme.typography.bodyMedium)
+                                            Text(text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}", style = MaterialTheme.typography.bodyMedium)
                                             Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
                                         }
                                         IconButton(onClick = { receivedVideoToDelete = subVideo }) {
