@@ -59,7 +59,7 @@ fun MainScreen() {
     fun refreshSnippets() {
         val directory = context.filesDir
         snippetFiles = directory.listFiles { file ->
-            file.extension == "mp4" && !file.name.startsWith("final_")
+            file.extension == "mp4" && !file.name.startsWith("final_") && !file.name.startsWith("received_")
         }?.toList()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 
