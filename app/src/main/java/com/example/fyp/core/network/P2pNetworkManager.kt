@@ -36,8 +36,8 @@ class P2pNetworkManager(private val context: Context) {
 
     //  hold incoming files until they finish downloading
     private val incomingPayloads = mutableMapOf<Long, Payload>()
-    // temporarily holds Topic IDs until the matching file finishes downloading
-    private val pendingVideoMetadata = mutableMapOf<Long, Int>()
+    // temporarily holds Topic IDs and original publisherID until the matching file finishes downloading
+    private val pendingVideoMetadata = mutableMapOf<Long, Pair<Int, String>>()
 
     // receive files and save to DB
     private val payloadCallback = object : PayloadCallback() {
@@ -60,7 +60,7 @@ class P2pNetworkManager(private val context: Context) {
                                 Log.w("P2P", "Echo detected! Canceling download for own video.")
                                 connectionsClient.cancelPayload(filePayloadId)
                             } else {
-                                pendingVideoMetadata[filePayloadId] = topicId
+                                pendingVideoMetadata[filePayloadId] = Pair(topicId, publisherId)
                                 Log.d("P2P", "Incoming valid video. Topic: $topicId, Publisher: $publisherId")
 
                                 // TODO store the original publisherId to display
@@ -85,8 +85,11 @@ class P2pNetworkManager(private val context: Context) {
                 }
                 PayloadTransferUpdate.Status.SUCCESS -> {
                     val payload = incomingPayloads.remove(update.payloadId)
-                    // synced topicID (default to 1)
-                    val syncedTopicId = pendingVideoMetadata.remove(update.payloadId) ?: 1
+
+                    // --- THE FIX: Extract both values from the Pair ---
+                    val metadata = pendingVideoMetadata.remove(update.payloadId)
+                    val syncedTopicId = metadata?.first ?: 1
+                    val originalPublisherId = metadata?.second ?: "Unknown_Publisher"
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
@@ -110,7 +113,7 @@ class P2pNetworkManager(private val context: Context) {
                                 val receivedVideo = SubscribedVideoEntity(
                                     deliveryId = java.util.UUID.randomUUID().toString(),
                                     videoId = uniqueId,
-                                    subscriberId = localUsername,
+                                    subscriberId = originalPublisherId,
                                     topicId = syncedTopicId,
                                     sourcePeerId = endpointId,
                                     receivedAt = System.currentTimeMillis(),
@@ -118,7 +121,7 @@ class P2pNetworkManager(private val context: Context) {
                                     deliveryState = "DELIVERED"
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                                Log.d("P2P", "Video saved! Synced Topic ID: $syncedTopicId")
+                                Log.d("P2P", "Video saved! Topic ID: $syncedTopicId, Publisher: $originalPublisherId")
                             } catch (e: Exception) {
                                 Log.e("P2P", "Failed to copy and save video: ${e.message}")
                             }
