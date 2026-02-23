@@ -1,5 +1,6 @@
 package com.example.fyp.feature
 
+import android.R.attr.bottom
 import android.app.Application
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -114,7 +115,7 @@ fun MainScreen() {
                                 isProcessing = false
 
                                 if (success) {
-                                    Toast.makeText(context, "Video Stitched & Saved to DB!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Video Spliced & Saved to DB!", Toast.LENGTH_SHORT).show()
 
                                     // get cumulative duration of snippets
                                     var actualDurationSeconds = 0
@@ -139,12 +140,12 @@ fun MainScreen() {
 
                                     refreshSnippets()
                                 } else {
-                                    Toast.makeText(context, "Stitching failed", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Splicing failed", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
                         icon = { Icon(Icons.Default.Movie, contentDescription = null) },
-                        text = { Text("Stitch Snippets") }
+                        text = { Text("Splice Snippets") }
                     )
                 }
             }
@@ -275,7 +276,8 @@ fun MainScreen() {
                     } else {
                         LazyColumn(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    contentPadding = PaddingValues(bottom = 88.dp) // push above splice button
                         ) {
                             items(subscribedVideos) { subVideo ->
                                 Card(
