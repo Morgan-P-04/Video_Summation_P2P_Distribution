@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.fyp.core.database.entities.SubscribedVideoEntity
 
 @Composable
 fun MainScreen() {
@@ -52,6 +53,7 @@ fun MainScreen() {
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameTextFieldValue by remember { mutableStateOf("") }
     var videoPathToPlay by remember { mutableStateOf<String?>(null) }
+    var receivedVideoToDelete by remember { mutableStateOf<SubscribedVideoEntity?>(null) }
 
     // Helper function --> get only unstitched snippets from DB
     fun refreshSnippets() {
@@ -247,6 +249,9 @@ fun MainScreen() {
                                             Text(text = "Topic ID: ${subVideo.topicId}", style = MaterialTheme.typography.bodyMedium)
                                             Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
                                         }
+                                        IconButton(onClick = { receivedVideoToDelete = subVideo }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete Received Video", tint = Color.Red)
+                                        }
                                     }
                                 }
                             }
@@ -318,6 +323,24 @@ fun MainScreen() {
                     },
                     dismissButton = {
                         TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // Delete Confirmation Dialog for received videos
+            receivedVideoToDelete?.let { video ->
+                AlertDialog(
+                    onDismissRequest = { receivedVideoToDelete = null },
+                    title = { Text("Delete Received Video?") },
+                    text = { Text("Are you sure you want to permanently delete this received video from your device?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.deleteReceivedVideo(video)
+                            receivedVideoToDelete = null
+                        }) { Text("Delete", color = Color.Red) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { receivedVideoToDelete = null }) { Text("Cancel") }
                     }
                 )
             }

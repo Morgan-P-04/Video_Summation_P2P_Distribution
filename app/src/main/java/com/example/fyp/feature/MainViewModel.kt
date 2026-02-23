@@ -55,6 +55,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.deletePublishedVideo(video)
         }
     }
+    // Function to remove a received video and its file
+    fun deleteReceivedVideo(video: SubscribedVideoEntity) {
+        viewModelScope.launch {
+            // reconstruct the file path and delete
+            val file = java.io.File(getApplication<Application>().filesDir, "received_${video.videoId}.mp4")
+            if (file.exists()) {
+                file.delete()
+            }
+
+            // delete the record from Room DB
+            repository.deleteSubscribedVideo(video)
+        }
+    }
 }
 
 // Factory to create the ViewModel with the Application context
