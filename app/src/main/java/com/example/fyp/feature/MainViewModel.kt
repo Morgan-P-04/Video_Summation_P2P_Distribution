@@ -19,16 +19,25 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 val predefinedTopics = mapOf(
-    1 to "General", // daily highlight videos
+    1 to "Daily Highlight",
     2 to "Sports",
     3 to "Tech",
-    4 to "Campus Life"
+    4 to "Campus Life",
+    5 to "Cooking"
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = (application as MainApplication).database
     private val repository = VideoRepository(db.publishedVideoDao(), db.subscribedVideoDao())
+
+    // get persistent publisherID
+    private val prefs = application.getSharedPreferences("p2p_prefs", android.content.Context.MODE_PRIVATE)
+    private val localNodeId: String = prefs.getString("node_id", null) ?: run {
+        val newId = UUID.randomUUID().toString()
+        prefs.edit().putString("node_id", newId).apply()
+        newId
+    }
 
     // track which topics the user is currently subscribed to (Default: All)
     private val _activeSubscriptions = MutableStateFlow(setOf(1, 2, 3, 4))
@@ -53,13 +62,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Function to save a new stitched video (accepts topicId)
+    // Function to save a new spliced video (accepts topicId)
     fun saveVideoToDb(localPath: String, duration: Int, topicId: Int) {
         viewModelScope.launch {
             val newVideo = PublishedVideoEntity(
                 videoId = UUID.randomUUID().toString(),
                 topicId = topicId, // use selected topic
-                userId = "me", // TODO: update with actual UID
+                userId = localNodeId, // persistent publisherID
                 duration = duration,
                 createdAt = System.currentTimeMillis(),
                 shareCount = 0,
