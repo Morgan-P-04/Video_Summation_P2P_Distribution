@@ -19,6 +19,13 @@ class P2pNetworkManager(private val context: Context) {
     // cluster strategy for M-to-N mesh networks (Epidemic Routing)
     private val STRATEGY = Strategy.P2P_CLUSTER
     private val SERVICE_ID = "com.example.fyp.OPTIMISED_PUB_SUB"
+    // persistent publisherID
+    private val prefs = context.getSharedPreferences("p2p_prefs", Context.MODE_PRIVATE)
+    private val localNodeId: String = prefs.getString("node_id", null) ?: run {
+        val newId = UUID.randomUUID().toString()
+        prefs.edit().putString("node_id", newId).apply()
+        newId
+    }
 
     private var localUsername: String = "Unknown_Node"
     private val connectedEndpoints = mutableSetOf<String>()
@@ -29,24 +36,35 @@ class P2pNetworkManager(private val context: Context) {
 
     //  hold incoming files until they finish downloading
     private val incomingPayloads = mutableMapOf<Long, Payload>()
-    // temporarily holds Topic IDs until the matching file finishes downloading
-    private val pendingVideoMetadata = mutableMapOf<Long, Int>()
+    // temporarily holds Topic IDs and original publisherID until the matching file finishes downloading
+    private val pendingVideoMetadata = mutableMapOf<Long, Pair<Int, String>>()
 
     // receive files and save to DB
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             when (payload.type) {
                 Payload.Type.BYTES -> {
+                    // catch metadata packet
                     val metadataStr = String(payload.asBytes()!!, Charsets.UTF_8)
                     val parts = metadataStr.split(",")
-                    if (parts.size == 2) {
+
+                    // expecting payloadId, topicId, publisherId
+                    if (parts.size == 3) {
                         val filePayloadId = parts[0].toLongOrNull()
                         val topicId = parts[1].toIntOrNull()
+                        val publisherId = parts[2]
 
                         if (filePayloadId != null && topicId != null) {
-                            //store topicID
-                            pendingVideoMetadata[filePayloadId] = topicId
-                            Log.d("P2P", "Received metadata: File ID $filePayloadId belongs to Topic $topicId")
+                            // echo blocker
+                            if (publisherId == localNodeId) {
+                                Log.w("P2P", "Echo detected! Canceling download for own video.")
+                                connectionsClient.cancelPayload(filePayloadId)
+                            } else {
+                                pendingVideoMetadata[filePayloadId] = Pair(topicId, publisherId)
+                                Log.d("P2P", "Incoming valid video. Topic: $topicId, Publisher: $publisherId")
+
+                                // TODO store the original publisherId to display
+                            }
                         }
                     }
                 }
@@ -67,8 +85,11 @@ class P2pNetworkManager(private val context: Context) {
                 }
                 PayloadTransferUpdate.Status.SUCCESS -> {
                     val payload = incomingPayloads.remove(update.payloadId)
-                    // synced topicID (default to 1)
-                    val syncedTopicId = pendingVideoMetadata.remove(update.payloadId) ?: 1
+
+                    // --- THE FIX: Extract both values from the Pair ---
+                    val metadata = pendingVideoMetadata.remove(update.payloadId)
+                    val syncedTopicId = metadata?.first ?: 1
+                    val originalPublisherId = metadata?.second ?: "Unknown_Publisher"
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
@@ -92,7 +113,7 @@ class P2pNetworkManager(private val context: Context) {
                                 val receivedVideo = SubscribedVideoEntity(
                                     deliveryId = java.util.UUID.randomUUID().toString(),
                                     videoId = uniqueId,
-                                    subscriberId = localUsername,
+                                    subscriberId = originalPublisherId,
                                     topicId = syncedTopicId,
                                     sourcePeerId = endpointId,
                                     receivedAt = System.currentTimeMillis(),
@@ -100,7 +121,7 @@ class P2pNetworkManager(private val context: Context) {
                                     deliveryState = "DELIVERED"
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                                Log.d("P2P", "Video saved! Synced Topic ID: $syncedTopicId")
+                                Log.d("P2P", "Video saved! Topic ID: $syncedTopicId, Publisher: $originalPublisherId")
                             } catch (e: Exception) {
                                 Log.e("P2P", "Failed to copy and save video: ${e.message}")
                             }
@@ -134,23 +155,33 @@ class P2pNetworkManager(private val context: Context) {
                 // send videos to new node
                 scope.launch {
                     val myVideos = db.publishedVideoDao().getMyPublishedVideos().first()
-
                     myVideos.forEach { video ->
                         val file = File(video.localPath)
                         if (file.exists()) {
                             // prepare file payload
                             val filePayload = Payload.fromFile(file)
-                            val payloadId = filePayload.id // The unique ID for this specific transfer
-
-                            // prepare the metadata payload (Format: "payloadId,topicId")
-                            val metadataString = "$payloadId,${video.topicId}"
+                            // Format: payloadId,topicId,publisherId
+                            val metadataString = "${filePayload.id},${video.topicId},$localNodeId"
                             val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
 
-                            // send metadata, then file
                             connectionsClient.sendPayload(endpointId, metadataPayload)
                             connectionsClient.sendPayload(endpointId, filePayload)
+                            Log.d("P2P", "Seeding published video to $endpointId")
+                        }
+                    }
 
-                            Log.d("P2P", "Sent metadata and file for ${file.name} to $endpointId")
+                    // forward received videos (pub-sub mesh)
+                    val foreignVideos = db.subscribedVideoDao().getMySubscribedVideos().first()
+                    foreignVideos.forEach { video ->
+                        val file = File(context.filesDir, "received_${video.videoId}.mp4")
+                        if (file.exists()) {
+                            val filePayload = Payload.fromFile(file)
+                            val metadataString = "${filePayload.id},${video.topicId},${video.subscriberId}"
+                            val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
+
+                            connectionsClient.sendPayload(endpointId, metadataPayload)
+                            connectionsClient.sendPayload(endpointId, filePayload)
+                            Log.d("P2P", "Forwarding foreign video to $endpointId")
                         }
                     }
                 }
