@@ -289,6 +289,7 @@ fun MainScreen() {
                                             style = MaterialTheme.typography.titleMedium
                                         )
                                         Text(text = "From Peer: ${subVideo.sourcePeerId.takeLast(6)}", style = MaterialTheme.typography.bodyMedium)
+                                        Text(text = "Creator Peer ID: ${subVideo.subscriberId.take(7)}", style = MaterialTheme.typography.bodyMedium)
                                         Text(text = "Delivered: ${subVideo.deliveryState}", style = MaterialTheme.typography.bodySmall)
                                     }
                                     IconButton(onClick = { receivedVideoToDelete = subVideo }) {
