@@ -26,4 +26,9 @@ class VideoRepository(
     suspend fun deleteSubscribedVideo(video: SubscribedVideoEntity) {
         subscribedVideoDao.deleteSubscribedVideo(video)
     }
+
+    suspend fun updatePublishedVideo(video: PublishedVideoEntity) {
+        publishedVideoDao.updatePublishedVideo(video)
+    }
+
 }

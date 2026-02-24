@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "published_videos")
 data class PublishedVideoEntity(
     @PrimaryKey val videoId: String,
+    val title: String,
     val topicId: Int,
     val userId: String,
     val duration: Int,

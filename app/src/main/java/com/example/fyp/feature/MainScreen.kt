@@ -55,6 +55,8 @@ fun MainScreen() {
     var renameTextFieldValue by remember { mutableStateOf("") }
     var videoPathToPlay by remember { mutableStateOf<String?>(null) }
     var receivedVideoToDelete by remember { mutableStateOf<SubscribedVideoEntity?>(null) }
+    var dbVideoToRename by remember { mutableStateOf<PublishedVideoEntity?>(null) }
+    var dbRenameTextFieldValue by remember { mutableStateOf("") }
 
     // Track selected topic for splicing
     var selectedPublishTopic by remember { mutableStateOf(1) } // Default to General
@@ -227,11 +229,19 @@ fun MainScreen() {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = dbVideo.title, style = MaterialTheme.typography.titleMedium)
                                         Text(
                                             text = "Topic: ${predefinedTopics[dbVideo.topicId]}",
                                             style = MaterialTheme.typography.titleMedium
                                         )
                                         Text(text = "Duration: ${dbVideo.duration}s", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    // edit icon for DB videos
+                                    IconButton(onClick = {
+                                        dbVideoToRename = dbVideo
+                                        dbRenameTextFieldValue = dbVideo.title
+                                    }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Rename Video")
                                     }
                                     // trash can icon for DB videos
                                     IconButton(onClick = { dbVideoToDelete = dbVideo }) {
@@ -284,6 +294,7 @@ fun MainScreen() {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = subVideo.title, style = MaterialTheme.typography.titleMedium)
                                         Text(
                                             text = "Topic: ${predefinedTopics[subVideo.topicId]}",
                                             style = MaterialTheme.typography.titleMedium
@@ -365,6 +376,31 @@ fun MainScreen() {
                     },
                     dismissButton = {
                         TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
+                    }
+                )
+            }
+            dbVideoToRename?.let { video ->
+                AlertDialog(
+                    onDismissRequest = { dbVideoToRename = null },
+                    title = { Text("Rename Published Video") },
+                    text = {
+                        OutlinedTextField(
+                            value = dbRenameTextFieldValue,
+                            onValueChange = { dbRenameTextFieldValue = it },
+                            label = { Text("Video Title") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            if (dbRenameTextFieldValue.isNotBlank()) {
+                                viewModel.updateVideoTitle(video, dbRenameTextFieldValue)
+                            }
+                            dbVideoToRename = null
+                        }) { Text("Save") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { dbVideoToRename = null }) { Text("Cancel") }
                     }
                 )
             }

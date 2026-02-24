@@ -36,8 +36,8 @@ class P2pNetworkManager(private val context: Context) {
 
     //  hold incoming files until they finish downloading
     private val incomingPayloads = mutableMapOf<Long, Payload>()
-    // temporarily holds Topic IDs and original publisherID until the matching file finishes downloading
-    private val pendingVideoMetadata = mutableMapOf<Long, Pair<Int, String>>()
+    // temporarily holds Topic IDs, original publisherID, and title until the matching file finishes downloading
+    private val pendingVideoMetadata = mutableMapOf<Long, Triple<Int, String, String>>()
 
     // receive files and save to DB
     private val payloadCallback = object : PayloadCallback() {
@@ -46,13 +46,13 @@ class P2pNetworkManager(private val context: Context) {
                 Payload.Type.BYTES -> {
                     // catch metadata packet
                     val metadataStr = String(payload.asBytes()!!, Charsets.UTF_8)
-                    val parts = metadataStr.split(",")
+                    val parts = metadataStr.split(",", limit = 4)
 
-                    // expecting payloadId, topicId, publisherId
-                    if (parts.size == 3) {
+                    if (parts.size == 4) {
                         val filePayloadId = parts[0].toLongOrNull()
                         val topicId = parts[1].toIntOrNull()
                         val publisherId = parts[2]
+                        val videoTitle = parts[3]
 
                         if (filePayloadId != null && topicId != null) {
                             // echo blocker
@@ -60,10 +60,7 @@ class P2pNetworkManager(private val context: Context) {
                                 Log.w("P2P", "Echo detected! Canceling download for own video.")
                                 connectionsClient.cancelPayload(filePayloadId)
                             } else {
-                                pendingVideoMetadata[filePayloadId] = Pair(topicId, publisherId)
-                                Log.d("P2P", "Incoming valid video. Topic: $topicId, Publisher: $publisherId")
-
-                                // TODO store the original publisherId to display
+                                pendingVideoMetadata[filePayloadId] = Triple(topicId, publisherId, videoTitle)
                             }
                         }
                     }
@@ -86,10 +83,10 @@ class P2pNetworkManager(private val context: Context) {
                 PayloadTransferUpdate.Status.SUCCESS -> {
                     val payload = incomingPayloads.remove(update.payloadId)
 
-                    // --- THE FIX: Extract both values from the Pair ---
                     val metadata = pendingVideoMetadata.remove(update.payloadId)
                     val syncedTopicId = metadata?.first ?: 1
                     val originalPublisherId = metadata?.second ?: "Unknown_Publisher"
+                    val syncedTitle = metadata?.third ?: "Untitled Highlight"
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
@@ -112,6 +109,7 @@ class P2pNetworkManager(private val context: Context) {
 
                                 val receivedVideo = SubscribedVideoEntity(
                                     deliveryId = java.util.UUID.randomUUID().toString(),
+                                    title = syncedTitle,
                                     videoId = uniqueId,
                                     subscriberId = originalPublisherId,
                                     topicId = syncedTopicId,
@@ -161,7 +159,7 @@ class P2pNetworkManager(private val context: Context) {
                             // prepare file payload
                             val filePayload = Payload.fromFile(file)
                             // Format: payloadId,topicId,publisherId
-                            val metadataString = "${filePayload.id},${video.topicId},$localNodeId"
+                            val metadataString = "${filePayload.id},${video.topicId},$localNodeId,${video.title}"
                             val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
 
                             connectionsClient.sendPayload(endpointId, metadataPayload)
@@ -176,7 +174,7 @@ class P2pNetworkManager(private val context: Context) {
                         val file = File(context.filesDir, "received_${video.videoId}.mp4")
                         if (file.exists()) {
                             val filePayload = Payload.fromFile(file)
-                            val metadataString = "${filePayload.id},${video.topicId},${video.subscriberId}"
+                            val metadataString = "${filePayload.id},${video.topicId},${video.subscriberId},${video.title}"
                             val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
 
                             connectionsClient.sendPayload(endpointId, metadataPayload)

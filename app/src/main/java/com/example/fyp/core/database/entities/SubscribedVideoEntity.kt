@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class SubscribedVideoEntity(
     @PrimaryKey val deliveryId: String,
     val videoId: String,
+    val title: String,
     val subscriberId: String,
     val topicId: Int,
     val sourcePeerId: String,
