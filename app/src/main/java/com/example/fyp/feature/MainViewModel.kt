@@ -1,6 +1,8 @@
 package com.example.fyp.feature
 
 import android.app.Application
+import android.content.Context
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -31,8 +34,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = (application as MainApplication).database
     private val repository = VideoRepository(db.publishedVideoDao(), db.subscribedVideoDao())
 
-    // get persistent publisherID
-    private val prefs = application.getSharedPreferences("p2p_prefs", android.content.Context.MODE_PRIVATE)
+    // get persistent publisherID and shared preferences
+    private val prefs = application.getSharedPreferences("p2p_prefs", Context.MODE_PRIVATE)
     private val localNodeId: String = prefs.getString("node_id", null) ?: run {
         val newId = UUID.randomUUID().toString()
         prefs.edit().putString("node_id", newId).apply()
@@ -40,29 +43,79 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // track which topics the user is currently subscribed to (Default: All)
-    private val _activeSubscriptions = MutableStateFlow(setOf(1, 2, 3, 4))
+    private val savedSubsStrings = prefs.getStringSet("active_subs", setOf("1", "2", "3", "4", "5"))
+    private val initialSubs = savedSubsStrings?.mapNotNull { it.toIntOrNull() }?.toSet() ?: setOf(1, 2, 3, 4, 5)
+
+    private val _activeSubscriptions = MutableStateFlow(initialSubs)
     val activeSubscriptions: StateFlow<Set<Int>> = _activeSubscriptions.asStateFlow()
 
     fun toggleSubscription(topicId: Int) {
-        _activeSubscriptions.value = if (_activeSubscriptions.value.contains(topicId)) {
-            _activeSubscriptions.value - topicId // Unsubscribe
+        val currentSubs = _activeSubscriptions.value
+        val newSubs = if (currentSubs.contains(topicId)) {
+            currentSubs - topicId // Unsubscribe
         } else {
-            _activeSubscriptions.value + topicId // Subscribe
+            currentSubs + topicId // Subscribe
         }
+
+        _activeSubscriptions.value = newSubs
+
+        // Save the new set immediately to SharedPreferences
+        prefs.edit().putStringSet("active_subs", newSubs.map { it.toString() }.toSet()).apply()
     }
 
     // Created Videos
     val myVideos: StateFlow<List<PublishedVideoEntity>> = repository.myVideos
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Received / Subscribed Videos
+    // Received / Subscribed Videos (filtered by active subscriptions)
     val subscribedVideos: StateFlow<List<SubscribedVideoEntity>> = repository.subscribedVideos
         .combine(_activeSubscriptions) { videos, subs ->
             videos.filter { subs.contains(it.topicId) } // subscribed topics shown
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Function to save a new spliced video (accepts topicId)
+    // Run the TTL cleanup automatically when the ViewModel is created (App Startup)
+    init {
+        purgeExpiredVideos()
+    }
+
+    //  24-hour TTL purge for Snippets and Received videos (DB & File System)
+    private fun purgeExpiredVideos() {
+        viewModelScope.launch {
+            val twentyFourHoursInMillis = 24 * 60 * 60 * 1000L
+            val thresholdTime = System.currentTimeMillis() - twentyFourHoursInMillis
+
+            try {
+                // snippets (File System)
+                val filesDir = getApplication<Application>().filesDir
+                val snippetFiles = filesDir.listFiles { file ->
+                    file.extension == "mp4" &&
+                            !file.name.startsWith("final_") &&
+                            !file.name.startsWith("received_")
+                }
+
+                snippetFiles?.forEach { file ->
+                    if (file.lastModified() < thresholdTime) {
+                        Log.d("TTL_PURGE", "Deleting expired snippet: ${file.name}")
+                        file.delete()
+                    }
+                }
+
+                // check received P2P videos (Database & File System)
+                val received = repository.subscribedVideos.first()
+                received.forEach { video ->
+                    if (video.receivedAt < thresholdTime) {
+                        Log.d("TTL_PURGE", "Deleting expired received video: ${video.videoId}")
+                        deleteReceivedVideo(video) // deletes both the DB row and the file
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TTL_PURGE", "Failed to run TTL cleanup: ${e.message}")
+            }
+        }
+    }
+
+    // Function to save a new spliced video (accepts topicID)
     fun saveVideoToDb(localPath: String, duration: Int, topicId: Int) {
         viewModelScope.launch {
             val newVideo = PublishedVideoEntity(
@@ -77,7 +130,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.savePublishedVideo(newVideo)
         }
     }
-    // Function to delete stitched video
+
+    // Function to delete spliced video (both DB and file)
     fun deleteVideo(video: PublishedVideoEntity) {
         viewModelScope.launch {
             val file = java.io.File(video.localPath)
@@ -85,12 +139,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.deletePublishedVideo(video)
         }
     }
-    // Function to remove a received video and its file
+
+    // Function to remove a received video (both DB and file)
     fun deleteReceivedVideo(video: SubscribedVideoEntity) {
         viewModelScope.launch {
             val file = java.io.File(getApplication<Application>().filesDir, "received_${video.videoId}.mp4")
             if (file.exists()) file.delete()
-            // delete the record from Room DB
             repository.deleteSubscribedVideo(video)
         }
     }
