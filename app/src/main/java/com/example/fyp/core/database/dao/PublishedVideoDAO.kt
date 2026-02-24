@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.fyp.core.database.entities.PublishedVideoEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -18,4 +19,7 @@ interface PublishedVideoDao {
 
     @Delete
     suspend fun deleteVideo(video: PublishedVideoEntity)
+
+    @Update
+    suspend fun updatePublishedVideo(video: PublishedVideoEntity)
 }

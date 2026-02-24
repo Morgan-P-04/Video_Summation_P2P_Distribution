@@ -120,6 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val newVideo = PublishedVideoEntity(
                 videoId = UUID.randomUUID().toString(),
+                title = "Untitled Highlight",
                 topicId = topicId, // use selected topic
                 userId = localNodeId, // persistent publisherID
                 duration = duration,
@@ -128,6 +129,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 localPath = localPath
             )
             repository.savePublishedVideo(newVideo)
+        }
+    }
+    // Function to update the title of a spliced video
+    fun updateVideoTitle(video: PublishedVideoEntity, newTitle: String) {
+        viewModelScope.launch {
+            // .copy() creates a duplicate of the object with just the title changed!
+            repository.updatePublishedVideo(video.copy(title = newTitle))
         }
     }
 
