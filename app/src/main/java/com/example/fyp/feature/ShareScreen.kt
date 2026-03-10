@@ -1,6 +1,7 @@
 package com.example.fyp.feature
 
 import android.Manifest
+import android.content.Context
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,10 @@ import com.example.fyp.core.network.P2pNetworkManager
 @Composable
 fun ShareScreen() {
     val context = LocalContext.current
+    val prefs = context.getSharedPreferences("p2p_prefs", Context.MODE_PRIVATE)
+
+    // grab username from Settings, default to "Unknown_Node" if empty
+    val savedUsername = prefs.getString("username", "Unknown_Node") ?: "Unknown_Node"
 
     // Create a network manager instance
     val p2pManager = remember { P2pNetworkManager(context) }
@@ -60,7 +65,7 @@ fun ShareScreen() {
         permissionsGranted = allGranted
         if (allGranted && !isSharing) {
             isSharing = true
-            p2pManager.startP2p(username = "Node_${Build.MODEL}")
+            p2pManager.startP2p(savedUsername)
         }
     }
 
@@ -90,7 +95,7 @@ fun ShareScreen() {
                 Button(onClick = {
                     if (permissionsGranted) {
                         isSharing = true
-                        p2pManager.startP2p(username = "Node_${Build.MODEL}")
+                        p2pManager.startP2p(savedUsername)
                     } else {
                         // Launch the permission request
                         permissionLauncher.launch(permissionsToRequest)
