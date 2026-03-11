@@ -22,4 +22,7 @@ interface SubscribedVideoDao {
 
     @Delete
     suspend fun deleteSubscribedVideo(video: SubscribedVideoEntity)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM subscribed_videos WHERE videoId = :videoId)")
+    suspend fun doesVideoExist(videoId: String): Boolean
 }
