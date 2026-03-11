@@ -141,8 +141,15 @@ class P2pNetworkManager(private val context: Context) {
     // connection lifecycle (auto accept logic)
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            Log.d("P2P", "Found node ${connectionInfo.endpointName}. auto-accepting")
-            connectionsClient.acceptConnection(endpointId, payloadCallback)
+
+            // prevent the phone from connecting to itself
+            if (connectionInfo.endpointName == localUsername) {
+                Log.w("P2P", "Discovered myself (${connectionInfo.endpointName}). Rejecting ghost connection.")
+                connectionsClient.rejectConnection(endpointId)
+            } else {
+                Log.d("P2P", "Found node ${connectionInfo.endpointName}. auto-accepting")
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
+            }
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
