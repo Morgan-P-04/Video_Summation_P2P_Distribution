@@ -75,38 +75,48 @@ object VideoSplicer {
                 // Process Video Track
                 if (videoTrackIndex != -1) {
                     extractor.selectTrack(videoTrackIndex)
-                    var lastPresentationTime = 0L
+                    var maxPresentationTime = 0L // Track true maximum time
+
                     while (true) {
                         bufferInfo.size = extractor.readSampleData(buffer, 0)
                         if (bufferInfo.size < 0) break
 
                         bufferInfo.presentationTimeUs = extractor.sampleTime + videoOffset
-                        lastPresentationTime = bufferInfo.presentationTimeUs
-                        bufferInfo.flags = extractor.sampleFlags
 
+                        // Always store the highest timestamp to handle B-Frames
+                        if (bufferInfo.presentationTimeUs > maxPresentationTime) {
+                            maxPresentationTime = bufferInfo.presentationTimeUs
+                        }
+
+                        bufferInfo.flags = extractor.sampleFlags
                         muxer.writeSampleData(muxerVideoIndex, buffer, bufferInfo)
                         extractor.advance()
                     }
-                    videoOffset = lastPresentationTime + 1000 // Add small buffer
+                    // Add a 33ms (1 frame) buffer to the highest timestamp
+                    videoOffset = maxPresentationTime + 33000L
                     extractor.unselectTrack(videoTrackIndex)
                 }
 
                 // Process Audio Track
                 if (audioTrackIndex != -1) {
                     extractor.selectTrack(audioTrackIndex)
-                    var lastPresentationTime = 0L
+                    var maxPresentationTime = 0L // Track true maximum time
+
                     while (true) {
                         bufferInfo.size = extractor.readSampleData(buffer, 0)
                         if (bufferInfo.size < 0) break
 
                         bufferInfo.presentationTimeUs = extractor.sampleTime + audioOffset
-                        lastPresentationTime = bufferInfo.presentationTimeUs
-                        bufferInfo.flags = extractor.sampleFlags
 
+                        if (bufferInfo.presentationTimeUs > maxPresentationTime) {
+                            maxPresentationTime = bufferInfo.presentationTimeUs
+                        }
+                        bufferInfo.flags = extractor.sampleFlags
                         muxer.writeSampleData(muxerAudioIndex, buffer, bufferInfo)
                         extractor.advance()
                     }
-                    audioOffset = lastPresentationTime + 1000
+                    // 22ms buffer to the highest audio timestamp
+                    audioOffset = maxPresentationTime + 22000L
                 }
                 extractor.release()
             }

@@ -67,8 +67,12 @@ fun CameraContent(context: Context, lifecycleOwner: androidx.lifecycle.Lifecycle
     // CameraX Variables
     val previewView = remember { PreviewView(context) }
     val videoCapture = remember {
+        // force 480p
+        val qualitySelector = QualitySelector.from(Quality.HD,
+            FallbackStrategy.lowerQualityOrHigherThan(Quality.HD)
+        )
         val recorder = Recorder.Builder()
-            .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+            .setQualitySelector(qualitySelector)
             .build()
         VideoCapture.withOutput(recorder)
     }
