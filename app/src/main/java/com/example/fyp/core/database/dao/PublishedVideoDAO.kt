@@ -22,4 +22,7 @@ interface PublishedVideoDao {
 
     @Update
     suspend fun updatePublishedVideo(video: PublishedVideoEntity)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM published_videos WHERE videoId = :videoId)")
+    suspend fun doesVideoExist(videoId: String): Boolean
 }

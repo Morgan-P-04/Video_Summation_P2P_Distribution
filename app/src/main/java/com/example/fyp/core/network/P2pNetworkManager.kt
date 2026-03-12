@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
+data class VideoMetadata(val topicId: Int, val publisherId: String, val title: String, val videoId: String)
 class P2pNetworkManager(private val context: Context) {
 
     private val connectionsClient = Nearby.getConnectionsClient(context)
@@ -37,7 +38,7 @@ class P2pNetworkManager(private val context: Context) {
     //  hold incoming files until they finish downloading
     private val incomingPayloads = mutableMapOf<Long, Payload>()
     // temporarily holds Topic IDs, original publisherID, and title until the matching file finishes downloading
-    private val pendingVideoMetadata = mutableMapOf<Long, Triple<Int, String, String>>()
+    private val pendingVideoMetadata = mutableMapOf<Long, VideoMetadata>()
 
     // receive files and save to DB
     private val payloadCallback = object : PayloadCallback() {
@@ -46,21 +47,28 @@ class P2pNetworkManager(private val context: Context) {
                 Payload.Type.BYTES -> {
                     // catch metadata packet
                     val metadataStr = String(payload.asBytes()!!, Charsets.UTF_8)
-                    val parts = metadataStr.split(",", limit = 4)
+                    val parts = metadataStr.split(",", limit = 5)
 
-                    if (parts.size == 4) {
+                    if (parts.size == 5) {
                         val filePayloadId = parts[0].toLongOrNull()
                         val topicId = parts[1].toIntOrNull()
                         val publisherId = parts[2]
                         val videoTitle = parts[3]
+                        val networkVideoId = parts[4] // catch universal ID
 
                         if (filePayloadId != null && topicId != null) {
-                            // echo blocker
-                            if (publisherId == localNodeId) {
-                                Log.w("P2P", "Echo detected! Canceling download for own video.")
-                                connectionsClient.cancelPayload(filePayloadId)
-                            } else {
-                                pendingVideoMetadata[filePayloadId] = Triple(topicId, publisherId, videoTitle)
+                            scope.launch {
+                                // database summary vector check
+                                val havePublished = db.publishedVideoDao().doesVideoExist(networkVideoId)
+                                val haveSubscribed = db.subscribedVideoDao().doesVideoExist(networkVideoId)
+
+                                if (publisherId == localNodeId || havePublished || haveSubscribed) {
+                                    Log.w("P2P", "Echo Blocked! We already have video $networkVideoId. Canceling download.")
+                                    connectionsClient.cancelPayload(filePayloadId)
+                                } else {
+                                    // It's a new video! Save the metadata object
+                                    pendingVideoMetadata[filePayloadId] = VideoMetadata(topicId, publisherId, videoTitle, networkVideoId)
+                                }
                             }
                         }
                     }
@@ -82,11 +90,15 @@ class P2pNetworkManager(private val context: Context) {
                 }
                 PayloadTransferUpdate.Status.SUCCESS -> {
                     val payload = incomingPayloads.remove(update.payloadId)
-
                     val metadata = pendingVideoMetadata.remove(update.payloadId)
-                    val syncedTopicId = metadata?.first ?: 1
-                    val originalPublisherId = metadata?.second ?: "Unknown_Publisher"
-                    val syncedTitle = metadata?.third ?: "Untitled Highlight"
+
+                    // If metadata got lost, generate fallbacks
+                    val syncedTopicId = metadata?.topicId ?: 1
+                    val originalPublisherId = metadata?.publisherId ?: "Unknown_Publisher"
+                    val syncedTitle = metadata?.title ?: "Untitled Highlight"
+
+                    // universal network ID
+                    val uniqueId = metadata?.videoId ?: System.currentTimeMillis().toString()
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
@@ -141,8 +153,15 @@ class P2pNetworkManager(private val context: Context) {
     // connection lifecycle (auto accept logic)
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
-            Log.d("P2P", "Found node ${connectionInfo.endpointName}. auto-accepting")
-            connectionsClient.acceptConnection(endpointId, payloadCallback)
+
+            // prevent the phone from connecting to itself
+            if (connectionInfo.endpointName == localUsername) {
+                Log.w("P2P", "Discovered myself (${connectionInfo.endpointName}). Rejecting ghost connection.")
+                connectionsClient.rejectConnection(endpointId)
+            } else {
+                Log.d("P2P", "Found node ${connectionInfo.endpointName}. auto-accepting")
+                connectionsClient.acceptConnection(endpointId, payloadCallback)
+            }
         }
 
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
@@ -159,7 +178,7 @@ class P2pNetworkManager(private val context: Context) {
                             // prepare file payload
                             val filePayload = Payload.fromFile(file)
                             // Format: payloadId,topicId,publisherId
-                            val metadataString = "${filePayload.id},${video.topicId},$localNodeId,${video.title}"
+                            val metadataString = "${filePayload.id},${video.topicId},$localNodeId,${video.title},${video.videoId}"
                             val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
 
                             connectionsClient.sendPayload(endpointId, metadataPayload)
@@ -174,7 +193,7 @@ class P2pNetworkManager(private val context: Context) {
                         val file = File(context.filesDir, "received_${video.videoId}.mp4")
                         if (file.exists()) {
                             val filePayload = Payload.fromFile(file)
-                            val metadataString = "${filePayload.id},${video.topicId},${video.subscriberId},${video.title}"
+                            val metadataString = "${filePayload.id},${video.topicId},${video.subscriberId},${video.title},${video.videoId}"
                             val metadataPayload = Payload.fromBytes(metadataString.toByteArray(Charsets.UTF_8))
 
                             connectionsClient.sendPayload(endpointId, metadataPayload)
@@ -210,13 +229,18 @@ class P2pNetworkManager(private val context: Context) {
     // public controls
 
     fun startP2p(username: String) {
-        localUsername = username
+        // force a unique name if the memory is empty
+        localUsername = if (username == "Unknown_Node" || username.isBlank()) {
+            "Node_${(1000..9999).random()}"
+        } else {
+            username
+        }
 
         // start advertising
         val advertisingOptions = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         connectionsClient.startAdvertising(
             localUsername, SERVICE_ID, connectionLifecycleCallback, advertisingOptions
-        ).addOnSuccessListener { Log.d("P2P", "Advertising started") }
+        ).addOnSuccessListener { Log.d("P2P", "Advertising started as $localUsername") }
             .addOnFailureListener { Log.e("P2P", "Advertising failed: ${it.message}") }
 
         // start discovering
