@@ -97,14 +97,14 @@ class P2pNetworkManager(private val context: Context) {
                     val originalPublisherId = metadata?.publisherId ?: "Unknown_Publisher"
                     val syncedTitle = metadata?.title ?: "Untitled Highlight"
 
-                    // universal network ID
+                    // Use the network-wide unique ID from metadata — DO NOT redeclare this below
                     val uniqueId = metadata?.videoId ?: System.currentTimeMillis().toString()
 
                     val payloadFile = payload?.asFile()
                     if (payloadFile != null) {
                         scope.launch {
                             try {
-                                val uniqueId = System.currentTimeMillis().toString()
+                                // Use uniqueId to name the file consistently on disk
                                 val finalFile = File(context.filesDir, "received_$uniqueId.mp4")
 
                                 val uri = payloadFile.asUri()
@@ -131,9 +131,11 @@ class P2pNetworkManager(private val context: Context) {
                                     deliveryState = "DELIVERED"
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
-                                Log.d("P2P", "Video saved! Topic ID: $syncedTopicId, Publisher: $originalPublisherId")
+                                Log.d("P2P", "Video saved! ID: $uniqueId, Topic: $syncedTopicId, Publisher: $originalPublisherId")
                             } catch (e: Exception) {
                                 Log.e("P2P", "Failed to copy and save video: ${e.message}")
+                                // Clean up partial file if copy failed
+                                File(context.filesDir, "received_$uniqueId.mp4").delete()
                             }
                         }
                     }
