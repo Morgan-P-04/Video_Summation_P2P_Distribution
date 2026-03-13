@@ -12,6 +12,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+
+enum class P2pEvent {
+    VIDEO_SENT,
+    VIDEO_RECEIVED,
+    ECHO_BLOCKED,
+    PEER_CONNECTED
+}
 
 data class VideoMetadata(val topicId: Int, val publisherId: String, val title: String, val videoId: String)
 class P2pNetworkManager(private val context: Context) {
@@ -27,6 +36,8 @@ class P2pNetworkManager(private val context: Context) {
         prefs.edit().putString("node_id", newId).apply()
         newId
     }
+    private val _p2pEvents = MutableSharedFlow<P2pEvent>(extraBufferCapacity = 8)
+    val p2pEvents = _p2pEvents.asSharedFlow()
 
     private var localUsername: String = "Unknown_Node"
     private val connectedEndpoints = mutableSetOf<String>()
@@ -65,6 +76,7 @@ class P2pNetworkManager(private val context: Context) {
                                 if (publisherId == localNodeId || havePublished || haveSubscribed) {
                                     Log.w("P2P", "Echo Blocked! We already have video $networkVideoId. Canceling download.")
                                     connectionsClient.cancelPayload(filePayloadId)
+                                    _p2pEvents.tryEmit(P2pEvent.ECHO_BLOCKED)
                                 } else {
                                     // It's a new video! Save the metadata object
                                     pendingVideoMetadata[filePayloadId] = VideoMetadata(topicId, publisherId, videoTitle, networkVideoId)
@@ -132,6 +144,7 @@ class P2pNetworkManager(private val context: Context) {
                                 )
                                 db.subscribedVideoDao().insertSubscribedVideo(receivedVideo)
                                 Log.d("P2P", "Video saved! ID: $uniqueId, Topic: $syncedTopicId, Publisher: $originalPublisherId")
+                                _p2pEvents.tryEmit(P2pEvent.VIDEO_RECEIVED)
                             } catch (e: Exception) {
                                 Log.e("P2P", "Failed to copy and save video: ${e.message}")
                                 // Clean up partial file if copy failed
@@ -170,6 +183,7 @@ class P2pNetworkManager(private val context: Context) {
             if (result.status.statusCode == ConnectionsStatusCodes.STATUS_OK) {
                 Log.d("P2P", "Successfully connected to $endpointId. sending videos")
                 connectedEndpoints.add(endpointId)
+                _p2pEvents.tryEmit(P2pEvent.PEER_CONNECTED)
 
                 // send videos to new node
                 scope.launch {
@@ -186,6 +200,7 @@ class P2pNetworkManager(private val context: Context) {
                             connectionsClient.sendPayload(endpointId, metadataPayload)
                             connectionsClient.sendPayload(endpointId, filePayload)
                             Log.d("P2P", "Seeding published video to $endpointId")
+                            _p2pEvents.tryEmit(P2pEvent.VIDEO_SENT)
                         }
                     }
 
