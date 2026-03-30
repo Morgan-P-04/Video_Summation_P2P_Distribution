@@ -3,6 +3,7 @@ package com.example.fyp.feature
 import android.Manifest
 import android.content.Context
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.fyp.core.network.P2pNetworkManager
+import com.example.fyp.core.network.P2pEvent
 
 @Composable
 fun ShareScreen() {
@@ -28,7 +30,20 @@ fun ShareScreen() {
     var isSharing by remember { mutableStateOf(false) }
     var permissionsGranted by remember { mutableStateOf(false) }
 
-    // permissions based on the Android version
+    // Collect P2P events and show toasts
+    LaunchedEffect(p2pManager) {
+        p2pManager.p2pEvents.collect { event ->
+            val message = when (event) {
+                P2pEvent.PEER_CONNECTED -> "Connected to a Peer"
+                P2pEvent.VIDEO_SENT -> "Video sent to Peer"
+                P2pEvent.VIDEO_RECEIVED -> "Video received from Peer"
+                P2pEvent.ECHO_BLOCKED -> "Own video not received"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Permissions
     val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // Android 13+ (API 33+)
         arrayOf(
@@ -61,7 +76,7 @@ fun ShareScreen() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissionsMap ->
         // check if permissions granted
-        val allGranted = permissionsMap.values.all { it == true }
+        val allGranted = permissionsMap.values.all { it }
         permissionsGranted = allGranted
         if (allGranted && !isSharing) {
             isSharing = true
